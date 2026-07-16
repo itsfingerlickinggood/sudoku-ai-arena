@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#000000">
+  <meta name="description" content="A minimal human-versus-AI Sudoku game with four solving algorithms.">
+  <title>Sudoku / Human vs AI</title>
+  <style>
+    :root {
+      --bg: #fafafa;
+      --panel: #fff;
+      --ink: #171717;
+      --muted: #737373;
+      --faint: #a3a3a3;
+      --line: #e5e5e5;
+      --strong: #a3a3a3;
+      --black: #000;
+      --blue: #0070f3;
+      --blue-soft: #eef6ff;
+      --violet: #7928ca;
+      --ai-soft: #f5f0ff;
+      --red: #e5484d;
+      --green: #46a758;
+      --radius: 12px;
+      --shadow: 0 12px 40px rgba(0,0,0,.06);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      min-height: 100dvh;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    button { color: inherit; font: inherit; }
+
+    .app {
+      width: min(1080px, 100%);
+      min-height: 100dvh;
+      margin: auto;
+      padding: clamp(16px, 3vw, 32px);
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      height: 42px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      flex: 0 0 auto;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; letter-spacing: -.02em; }
+    .brand-mark { width: 22px; height: 22px; display: grid; grid-template-columns: repeat(3,1fr); gap: 2px; }
+    .brand-mark i { border-radius: 1px; background: var(--black); }
+    .label { color: var(--muted); font-size: 12px; }
+    .live { display: flex; align-items: center; gap: 7px; }
+    .live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px #eaf6ec; }
+
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(320px, 560px) minmax(260px, 1fr);
+      align-items: center;
+      gap: clamp(28px, 6vw, 72px);
+    }
+
+    .game-column { width: 100%; display: flex; justify-content: center; }
+    .game-wrap { width: min(100%, 58dvh); }
+    .game-top { margin-bottom: 12px; display: flex; justify-content: space-between; align-items: flex-end; }
+    .turn-title { margin: 0; font-size: 14px; font-weight: 600; }
+    .turn-title span { color: var(--blue); }
+    .timer { color: var(--muted); font: 500 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    .board {
+      width: 100%;
+      aspect-ratio: 1;
+      display: grid;
+      grid-template-columns: repeat(9, 1fr);
+      overflow: hidden;
+      border: 2px solid var(--black);
+      border-radius: 8px;
+      background: var(--strong);
+      box-shadow: var(--shadow);
+    }
+    .cell {
+      position: relative;
+      min-width: 0;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      font-size: clamp(13px, 3.2dvh, 22px);
+      font-weight: 520;
+      cursor: pointer;
+      transition: background 100ms ease, color 100ms ease;
+    }
+    .cell:nth-child(9n) { border-right: 0; }
+    .cell:nth-child(n+73) { border-bottom: 0; }
+    .cell:nth-child(9n+3), .cell:nth-child(9n+6) { border-right: 2px solid var(--black); }
+    .cell:nth-child(n+19):nth-child(-n+27), .cell:nth-child(n+46):nth-child(-n+54) { border-bottom: 2px solid var(--black); }
+    .cell:hover:not(.given) { background: #f5f5f5; }
+    .cell:focus-visible { z-index: 2; outline: 2px solid var(--blue); outline-offset: -2px; }
+    .cell.peer { background: #f5f5f5; }
+    .cell.same { background: #ededed; }
+    .cell.selected { background: #e5f1ff; box-shadow: inset 0 0 0 2px var(--blue); z-index: 1; }
+    .cell.given { color: var(--black); font-weight: 700; cursor: default; }
+    .cell.human { color: var(--blue); font-weight: 650; }
+    .cell.ai { color: var(--violet); font-weight: 650; animation: place .24s ease-out both; }
+    .cell.error { color: var(--red); background: #fff2f2; animation: shake .24s ease; }
+    .cell .owner { position: absolute; right: 3px; bottom: 2px; font-size: 6px; font-weight: 800; text-transform: uppercase; opacity: .55; }
+
+    .keypad { margin-top: 12px; display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; }
+    .key {
+      min-width: 0;
+      aspect-ratio: 1.1;
+      padding: 0;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--panel);
+      font-size: clamp(11px, 1.8dvh, 14px);
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color .12s, transform .12s, background .12s;
+    }
+    .key:hover { border-color: var(--black); }
+    .key:active { transform: scale(.95); }
+    .key.erase { color: var(--muted); font-size: 15px; }
+
+    .side { width: 100%; max-width: 360px; }
+    h1 { margin: 0 0 8px; font-size: clamp(28px, 4vw, 44px); line-height: 1; letter-spacing: -.055em; font-weight: 690; }
+    .lede { margin: 0 0 24px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+
+    .score-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      margin-bottom: 20px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+    }
+    .score-box { padding: 13px 14px; }
+    .score-box + .score-box { border-left: 1px solid var(--line); }
+    .score-label { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 10px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--blue); }
+    .dot.ai-dot { background: var(--violet); }
+    .score-value { margin-top: 5px; font-size: 24px; font-weight: 650; letter-spacing: -.04em; }
+
+    .section-label { margin: 0 0 8px; color: var(--muted); font-size: 10px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase; }
+    .methods { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .method {
+      min-height: 46px;
+      padding: 9px 10px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--panel);
+      text-align: left;
+      cursor: pointer;
+      transition: border-color .12s, background .12s;
+    }
+    .method:hover { border-color: var(--strong); }
+    .method.active { color: white; border-color: var(--black); background: var(--black); }
+    .method strong { display: block; font-size: 11px; font-weight: 650; }
+    .method small { display: block; margin-top: 3px; color: var(--faint); font-size: 9px; white-space: nowrap; }
+    .method.active small { color: #a3a3a3; }
+
+    .method-info { min-height: 52px; margin: 10px 0 16px; padding: 10px 11px; border-left: 2px solid var(--black); background: #f3f3f3; color: var(--muted); font-size: 10px; line-height: 1.55; }
+    .method-info strong { color: var(--ink); }
+
+    .status { min-height: 18px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+    .status .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); }
+    .status.thinking .pulse { background: var(--violet); animation: pulse 1s infinite; }
+
+    .actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    .action { height: 38px; padding: 0 15px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font-size: 11px; font-weight: 650; cursor: pointer; }
+    .action.primary { color: white; border-color: var(--black); background: var(--black); }
+    .action:hover { opacity: .78; }
+    .mistakes { margin-top: 10px; color: var(--faint); font-size: 10px; text-align: center; }
+
+    .modal { position: fixed; inset: 0; z-index: 10; display: none; place-items: center; padding: 20px; background: rgba(250,250,250,.84); backdrop-filter: blur(8px); }
+    .modal.open { display: grid; }
+    .result { width: min(360px, 100%); padding: 28px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); box-shadow: 0 24px 80px rgba(0,0,0,.12); text-align: center; }
+    .result-kicker { color: var(--muted); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+    .result h2 { margin: 10px 0 8px; font-size: 30px; letter-spacing: -.045em; }
+    .result p { margin: 0 0 20px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+    @keyframes place { from { opacity: 0; transform: scale(.5); } }
+    @keyframes shake { 25% { transform: translateX(-2px); } 75% { transform: translateX(2px); } }
+    @keyframes pulse { 50% { opacity: .25; transform: scale(.75); } }
+
+    @media (max-width: 760px) {
+      .app { padding: 12px; }
+      header { height: 34px; }
+      main { display: flex; flex-direction: column; justify-content: flex-start; gap: 12px; }
+      .game-column { order: 2; }
+      .game-wrap { width: min(100%, 47dvh); }
+      .side { order: 1; max-width: none; }
+      h1 { display: inline; font-size: 22px; }
+      .lede { display: inline; margin-left: 7px; font-size: 10px; }
+      .score-row { float: right; width: 180px; margin: -4px 0 8px 10px; }
+      .score-box { padding: 7px 9px; }
+      .score-value { display: inline; margin: 0 0 0 5px; font-size: 15px; }
+      .score-label { display: inline-flex; font-size: 8px; }
+      .section-label { clear: both; padding-top: 5px; }
+      .methods { grid-template-columns: repeat(4, 1fr); }
+      .method { min-height: 36px; padding: 7px 5px; text-align: center; }
+      .method strong { font-size: 9px; }
+      .method small, .method-info, .mistakes { display: none; }
+      .status { float: left; margin: 9px 0 0; }
+      .actions { float: right; width: 180px; margin-top: 5px; }
+      .action { height: 28px; padding: 0 10px; font-size: 9px; }
+      .game-top { margin-bottom: 7px; }
+      .keypad { margin-top: 7px; gap: 4px; }
+    }
+
+    @media (max-width: 430px) {
+      .live { display: none; }
+      .game-wrap { width: min(100%, 46dvh); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        Sudoku<span class="label">/ arena</span>
+      </div>
+      <div class="label live">AI engine online</div>
+    </header>
+
+    <main>
+      <section class="game-column" aria-label="Sudoku game">
+        <div class="game-wrap">
+          <div class="game-top">
+            <p class="turn-title" id="turn-title"><span>Your turn.</span> Claim a cell.</p>
+            <span class="timer" id="timer">00:00</span>
+          </div>
+          <div class="board" id="board" role="grid" aria-label="Sudoku board"></div>
+          <div class="keypad" aria-label="Number pad">
+            <button class="key" data-number="1">1</button><button class="key" data-number="2">2</button>
+            <button class="key" data-number="3">3</button><button class="key" data-number="4">4</button>
+            <button class="key" data-number="5">5</button><button class="key" data-number="6">6</button>
+            <button class="key" data-number="7">7</button><button class="key" data-number="8">8</button>
+            <button class="key" data-number="9">9</button><button class="key erase" data-number="0" aria-label="Clear selection">×</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="side">
+        <h1>Outsolve the machine.</h1>
+        <p class="lede">Correct cells are claimed. Finish with more than the AI.</p>
+
+        <div class="score-row" aria-label="Scores">
+          <div class="score-box"><span class="score-label"><i class="dot"></i>You</span><span class="score-value" id="human-score">0</span></div>
+          <div class="score-box"><span class="score-label"><i class="dot ai-dot"></i>AI</span><span class="score-value" id="ai-score">0</span></div>
+        </div>
+
+        <p class="section-label">Choose the rival</p>
+        <div class="methods" id="methods">
+          <button class="method active" data-method="qlearning"><strong>Q-learning</strong><small>reward policy</small></button>
+          <button class="method" data-method="backtracking"><strong>Backtracking</strong><small>depth-first search</small></button>
+          <button class="method" data-method="forward"><strong>Forward check</strong><small>domain pruning</small></button>
+          <button class="method" data-method="constraint"><strong>Constraint</strong><small>logical propagation</small></button>
+        </div>
+        <div class="method-info" id="method-info"><strong>Q-learning.</strong> A tabular agent trained for 1,800 episodes ranks actions from rewards, constraints and future board value.</div>
+
+        <div class="status" id="status"><i class="pulse"></i><span>Choose a cell, then enter its value.</span></div>
+        <div class="actions">
+          <button class="action primary" id="new-game">New puzzle</button>
+          <button class="action" id="hint">Hint</button>
+        </div>
+        <div class="mistakes">Mistakes <span id="mistakes">0</span>/3 · Wrong answers give the AI a turn</div>
+      </aside>
+    </main>
+  </div>
+
+  <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="result-title">
+    <div class="result">
+      <div class="result-kicker">Puzzle complete</div>
+      <h2 id="result-title">You win.</h2>
+      <p id="result-copy"></p>
+      <button class="action primary" id="play-again">Play another</button>
+    </div>
+  </div>
+
+  <script>
+    const boardEl = document.getElementById('board');
+    const statusEl = document.getElementById('status');
+    const turnTitle = document.getElementById('turn-title');
+    const humanScoreEl = document.getElementById('human-score');
+    const aiScoreEl = document.getElementById('ai-score');
+    const mistakesEl = document.getElementById('mistakes');
+    const methodInfo = document.getElementById('method-info');
+    const timerEl = document.getElementById('timer');
+    const modal = document.getElementById('modal');
+
+    const methodCopy = {
+      qlearning: '<strong>Q-learning.</strong> A tabular agent trained for 1,800 episodes ranks actions from rewards, constraints and future board value.',
+      backtracking: '<strong>Backtracking.</strong> Depth-first search tries legal values, reverses dead ends and follows the first successful solution path.',
+      forward: '<strong>Forward checking.</strong> Every move prunes peer domains; minimum-remaining-values and degree heuristics select the next cell.',
+      constraint: '<strong>Constraint propagation.</strong> Naked and hidden singles are resolved repeatedly before a constrained fallback is chosen.'
+    };
+
+    let solution = [];
+    let puzzle = [];
+    let grid = [];
+    let owners = [];
+    let selected = -1;
+    let method = 'qlearning';
+    let humanScore = 0;
+    let aiScore = 0;
+    let mistakes = 0;
+    let locked = false;
+    let startedAt = Date.now();
+    let clock;
+    let aiTimer;
+    const qTable = {};
+
+    const range = n => [...Array(n).keys()];
+    const shuffled = values => [...values].sort(() => Math.random() - .5);
+    const boxIndex = (r, c) => Math.floor(r / 3) * 3 + Math.floor(c / 3);
+
+    function legalValues(state, index) {
+      if (state[index]) return [];
+      const row = Math.floor(index / 9), col = index % 9;
+      const used = new Set();
+      for (let i = 0; i < 9; i++) {
+        used.add(state[row * 9 + i]);
+        used.add(state[i * 9 + col]);
+      }
+      const br = Math.floor(row / 3) * 3, bc = Math.floor(col / 3) * 3;
+      for (let r = br; r < br + 3; r++) for (let c = bc; c < bc + 3; c++) used.add(state[r * 9 + c]);
+      return range(9).map(n => n + 1).filter(n => !used.has(n));
+    }
+
+    function fillGrid(state, index = 0) {
+      while (index < 81 && state[index]) index++;
+      if (index === 81) return true;
+      for (const value of shuffled(range(9).map(n => n + 1))) {
+        if (legalValues(state, index).includes(value)) {
+          state[index] = value;
+          if (fillGrid(state, index + 1)) return true;
+          state[index] = 0;
+        }
+      }
+      return false;
+    }
+
+    function countSolutions(state, limit = 2) {
+      let best = -1, options = null;
+      for (const i of range(81)) if (!state[i]) {
+        const possible = legalValues(state, i);
+        if (!possible.length) return 0;
+        if (!options || possible.length < options.length) { best = i; options = possible; }
+      }
+      if (best < 0) return 1;
+      let count = 0;
+      for (const value of options) {
+        state[best] = value;
+        count += countSolutions(state, limit - count);
+        state[best] = 0;
+        if (count >= limit) break;
+      }
+      return count;
+    }
+
+    function generatePuzzle() {
+      const solved = Array(81).fill(0);
+      fillGrid(solved);
+      const playable = [...solved];
+      const holes = 43;
+      let removed = 0;
+      for (const index of shuffled(range(81))) {
+        if (removed === holes) break;
+        const value = playable[index];
+        playable[index] = 0;
+        if (countSolutions([...playable]) === 1) removed++;
+        else playable[index] = value;
+      }
+      return { solved, playable };
+    }
+
+    function peers(index) {
+      const r = Math.floor(index / 9), c = index % 9, set = new Set();
+      for (let i = 0; i < 9; i++) { set.add(r * 9 + i); set.add(i * 9 + c); }
+      const br = Math.floor(r / 3) * 3, bc = Math.floor(c / 3) * 3;
+      for (let rr = br; rr < br + 3; rr++) for (let cc = bc; cc < bc + 3; cc++) set.add(rr * 9 + cc);
+      set.delete(index);
+      return [...set];
+    }
+
+    function features(state, index) {
+      const domain = legalValues(state, index).length;
+      const emptyPeers = peers(index).filter(i => !state[i]).length;
+      return { domain, pressure: Math.min(3, Math.floor((20 - emptyPeers) / 5)), box: boxIndex(Math.floor(index / 9), index % 9) };
+    }
+
+    function trainQAgent() {
+      const alpha = .18, gamma = .9, epsilon = .2;
+      for (let episode = 0; episode < 1800; episode++) {
+        let state = `${1 + Math.floor(Math.random() * 6)}|${Math.floor(Math.random() * 4)}`;
+        for (let step = 0; step < 18; step++) {
+          if (!qTable[state]) qTable[state] = Array(4).fill(0);
+          const action = Math.random() < epsilon ? Math.floor(Math.random() * 4) : qTable[state].indexOf(Math.max(...qTable[state]));
+          const [domain, pressure] = state.split('|').map(Number);
+          const reward = (7 - domain) * 1.4 + pressure * .8 + (action === Math.min(3, domain - 1) ? 4 : -1);
+          const next = `${Math.max(1, domain - (Math.random() > .45 ? 1 : 0))}|${Math.min(3, pressure + (Math.random() > .55 ? 1 : 0))}`;
+          if (!qTable[next]) qTable[next] = Array(4).fill(0);
+          qTable[state][action] += alpha * (reward + gamma * Math.max(...qTable[next]) - qTable[state][action]);
+          state = next;
+        }
+      }
+    }
+
+    function qLearningChoice(state) {
+      const open = range(81).filter(i => !state[i]);
+      return open.map(index => {
+        const f = features(state, index);
+        const key = `${Math.min(6, f.domain)}|${f.pressure}`;
+        const values = qTable[key] || [0,0,0,0];
+        const action = Math.min(3, Math.max(0, f.domain - 1));
+        return { index, score: values[action] + (9 - f.domain) * .2 + Math.random() * .01 };
+      }).sort((a,b) => b.score - a.score)[0].index;
+    }
+
+    function solveBacktrack(state, path = []) {
+      let best = -1, options = null;
+      for (const i of range(81)) if (!state[i]) {
+        const possible = legalValues(state, i);
+        if (!possible.length) return false;
+        if (!options || possible.length < options.length) { best = i; options = possible; }
+      }
+      if (best < 0) return true;
+      path.push(best);
+      for (const value of options) {
+        state[best] = value;
+        if (solveBacktrack(state, path)) return true;
+        state[best] = 0;
+      }
+      path.pop();
+      return false;
+    }
+
+    function backtrackingChoice(state) {
+      const copy = [...state], path = [];
+      solveBacktrack(copy, path);
+      return path[0] ?? range(81).find(i => !state[i]);
+    }
+
+    function forwardCheckingChoice(state) {
+      const open = range(81).filter(i => !state[i]);
+      return open.map(index => {
+        const domain = legalValues(state, index);
+        const degree = peers(index).filter(i => !state[i]).length;
+        const impact = peers(index).reduce((sum, peer) => sum + (!state[peer] && legalValues(state, peer).includes(solution[index]) ? 1 : 0), 0);
+        return { index, domain: domain.length, degree, impact };
+      }).sort((a,b) => a.domain - b.domain || b.impact - a.impact || b.degree - a.degree)[0].index;
+    }
+
+    function constraintChoice(state) {
+      const open = range(81).filter(i => !state[i]);
+      const naked = open.find(i => legalValues(state, i).length === 1);
+      if (naked !== undefined) return naked;
+      for (const index of open) {
+        const r = Math.floor(index / 9), c = index % 9, value = solution[index];
+        const units = [range(9).map(i => r * 9 + i), range(9).map(i => i * 9 + c)];
+        const br = Math.floor(r / 3) * 3, bc = Math.floor(c / 3) * 3;
+        units.push(range(9).map(i => (br + Math.floor(i / 3)) * 9 + bc + i % 3));
+        if (units.some(unit => unit.filter(i => !state[i] && legalValues(state, i).includes(value)).length === 1)) return index;
+      }
+      return forwardCheckingChoice(state);
+    }
+
+    function chooseAiCell() {
+      if (method === 'qlearning') return qLearningChoice(grid);
+      if (method === 'backtracking') return backtrackingChoice(grid);
+      if (method === 'forward') return forwardCheckingChoice(grid);
+      return constraintChoice(grid);
+    }
+
+    function render() {
+      boardEl.innerHTML = '';
+      grid.forEach((value, index) => {
+        const cell = document.createElement('button');
+        const r = Math.floor(index / 9) + 1, c = index % 9 + 1;
+        cell.className = 'cell';
+        cell.type = 'button';
+        cell.dataset.index = index;
+        cell.setAttribute('role', 'gridcell');
+        cell.setAttribute('aria-label', `Row ${r}, column ${c}${value ? `, ${value}` : ', empty'}`);
+        if (puzzle[index]) cell.classList.add('given');
+        if (owners[index]) cell.classList.add(owners[index]);
+        if (index === selected) cell.classList.add('selected');
+        if (selected >= 0) {
+          const sr = Math.floor(selected / 9), sc = selected % 9;
+          if (Math.floor(index / 9) === sr || index % 9 === sc || boxIndex(Math.floor(index / 9), index % 9) === boxIndex(sr, sc)) cell.classList.add('peer');
+          if (grid[selected] && value === grid[selected]) cell.classList.add('same');
+          if (index === selected) cell.classList.add('selected');
+        }
+        if (value) cell.innerHTML = `${value}${owners[index] ? `<span class="owner">${owners[index] === 'human' ? 'you' : 'ai'}</span>` : ''}`;
+        cell.addEventListener('click', () => selectCell(index));
+        boardEl.appendChild(cell);
+      });
+      humanScoreEl.textContent = humanScore;
+      aiScoreEl.textContent = aiScore;
+      mistakesEl.textContent = mistakes;
+    }
+
+    function selectCell(index) {
+      if (locked || puzzle[index] || owners[index]) return;
+      selected = index;
+      setStatus('Choose the value for this cell.');
+      render();
+    }
+
+    function setStatus(text, thinking = false) {
+      statusEl.classList.toggle('thinking', thinking);
+      statusEl.querySelector('span').textContent = text;
+      turnTitle.innerHTML = thinking ? '<span style="color:var(--violet)">AI turn.</span> Computing a move.' : '<span>Your turn.</span> Claim a cell.';
+    }
+
+    function enterNumber(value) {
+      if (locked || selected < 0 || puzzle[selected] || owners[selected] || value === 0) return;
+      if (value === solution[selected]) {
+        grid[selected] = value;
+        owners[selected] = 'human';
+        humanScore++;
+        selected = -1;
+        render();
+        if (checkComplete()) return;
+        beginAiTurn();
+      } else {
+        mistakes++;
+        const bad = selected;
+        render();
+        const cell = boardEl.children[bad];
+        cell.textContent = value;
+        cell.classList.add('error');
+        setStatus('That conflicts with the solution. AI gains a turn.');
+        if (mistakes >= 3) { locked = true; setTimeout(() => finishGame(true), 500); }
+        else setTimeout(beginAiTurn, 450);
+      }
+    }
+
+    function beginAiTurn() {
+      if (locked) return;
+      locked = true;
+      selected = -1;
+      setStatus(`${document.querySelector('.method.active strong').textContent} is evaluating constraints…`, true);
+      render();
+      aiTimer = setTimeout(() => {
+        const index = chooseAiCell();
+        if (index === undefined) return finishGame();
+        grid[index] = solution[index];
+        owners[index] = 'ai';
+        aiScore++;
+        locked = false;
+        setStatus('Move complete. Your turn.');
+        render();
+        checkComplete();
+      }, 520);
+    }
+
+    function checkComplete() {
+      if (grid.every(Boolean)) { finishGame(); return true; }
+      return false;
+    }
+
+    function finishGame(forfeit = false) {
+      locked = true;
+      clearInterval(clock);
+      const title = forfeit || aiScore > humanScore ? 'AI wins.' : humanScore > aiScore ? 'You win.' : 'A perfect draw.';
+      document.getElementById('result-title').textContent = title;
+      document.getElementById('result-copy').textContent = forfeit
+        ? `Three conflicts ended the round. Final score: ${humanScore}–${aiScore}.`
+        : `Final score: ${humanScore}–${aiScore}, against ${document.querySelector('.method.active strong').textContent}.`;
+      modal.classList.add('open');
+    }
+
+    function newGame() {
+      clearTimeout(aiTimer);
+      clearInterval(clock);
+      const generated = generatePuzzle();
+      solution = generated.solved;
+      puzzle = generated.playable;
+      grid = [...puzzle];
+      owners = Array(81).fill('');
+      selected = -1;
+      humanScore = 0;
+      aiScore = 0;
+      mistakes = 0;
+      locked = false;
+      startedAt = Date.now();
+      modal.classList.remove('open');
+      setStatus('Choose a cell, then enter its value.');
+      render();
+      clock = setInterval(() => {
+        const seconds = Math.floor((Date.now() - startedAt) / 1000);
+        timerEl.textContent = `${String(Math.floor(seconds / 60)).padStart(2,'0')}:${String(seconds % 60).padStart(2,'0')}`;
+      }, 1000);
+    }
+
+    document.querySelectorAll('.key').forEach(key => key.addEventListener('click', () => enterNumber(Number(key.dataset.number))));
+    document.querySelectorAll('.method').forEach(button => button.addEventListener('click', () => {
+      if (locked) return;
+      document.querySelectorAll('.method').forEach(item => item.classList.remove('active'));
+      button.classList.add('active');
+      method = button.dataset.method;
+      methodInfo.innerHTML = methodCopy[method];
+      setStatus(`${button.querySelector('strong').textContent} selected.`);
+    }));
+    document.getElementById('new-game').addEventListener('click', newGame);
+    document.getElementById('play-again').addEventListener('click', newGame);
+    document.getElementById('hint').addEventListener('click', () => {
+      if (locked) return;
+      const open = range(81).filter(i => !grid[i]);
+      if (!open.length) return;
+      selected = forwardCheckingChoice(grid);
+      setStatus(`Hint: this cell has ${legalValues(grid, selected).length} candidate${legalValues(grid, selected).length === 1 ? '' : 's'}.`);
+      render();
+    });
+    document.addEventListener('keydown', event => {
+      if (/^[1-9]$/.test(event.key)) enterNumber(Number(event.key));
+      if (event.key === 'Escape') { selected = -1; render(); }
+    });
+
+    trainQAgent();
+    newGame();
+  </script>
+</body>
+</html>
